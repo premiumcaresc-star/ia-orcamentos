@@ -1,3 +1,8 @@
+# Importar integração SINAPI
+from sinapi_integration import get_precos_sinapi, exibir_info_sinapi
+
+# Carregar preços da SINAPI
+precos_sinapi = get_precos_sinapi()
 import streamlit as st
 import pandas as pd
 import re
@@ -450,4 +455,6 @@ else:
     st.info(f"ℹ️ **Recomendação:** Modelo TERCEIRO tem lucro de R$ {resultados['lucro_terc']:,.2f} com menos risco")
 
 st.caption("💡 **Qualquer alteração nos valores atualiza os preços automaticamente!**")
+# Exibir informações da SINAPI
+exibir_info_sinapi()
 st.caption("📌 **PDF e DWG:** Para extração avançada de DWG, considere a versão profissional com integração CAD.") 
