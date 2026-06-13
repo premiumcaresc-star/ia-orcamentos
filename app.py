@@ -1,100 +1,80 @@
-import streamlit as st
-import re
-from datetime import datetime
+""")
 
-st.set_page_config(page_title="IA Orçamentos", page_icon="🌡️", layout="wide")
-
-st.title("🌡️ IA Orçamentos Climatização")
-st.caption(f"Data: {datetime.now().strftime('%d/%m/%Y')}")
 st.markdown("---")
-
-if 'valores' not in st.session_state:
-    st.session_state.valores = {
-        'equip_cond': 89000.0,
-        'equip_evap': 45000.0,
-        'equip_bms': 8500.0,
-        'ins_cobre': 19200.0,
-        'ins_drenos': 3500.0,
-        'ins_outros': 2500.0,
-        'mao_tec': 28000.0,
-        'mao_aux': 8000.0,
-        'mao_eng': 5000.0,
-        'serv_startup': 4500.0,
-        'serv_testes': 2500.0,
-        'garantia': 2.0,
-        'adm': 2.5,
-        'margem_dir': 40.0,
-        'fornece_equip': False,
-        'fornece_insumos': False,
-        'valor_equip_terc': 0.0,
-        'valor_insumos_terc': 0.0,
-        'mao_terc': 28000.0,
-        'consumiveis': 2800.0,
-        'startup_terc': 4500.0,
-        'margem_terc': 25.0
-    }
-
-def calcular():
-    v = st.session_state.valores
-    
-    custo_equip = v['equip_cond'] + v['equip_evap'] + v['equip_bms']
-    custo_insumos = v['ins_cobre'] + v['ins_drenos'] + v['ins_outros']
-    custo_mao = v['mao_tec'] + v['mao_aux'] + v['mao_eng']
-    custo_serv = v['serv_startup'] + v['serv_testes']
-    custo_dir = custo_equip + custo_insumos + custo_mao + custo_serv
-    
-    preco_cliente = custo_dir * (1 + v['garantia']/100 + v['adm']/100) * (1 + v['margem_dir']/100)
-    lucro_dir = preco_cliente - (custo_dir * (1 + v['garantia']/100 + v['adm']/100))
-    
-    custo_terc = v['mao_terc'] + v['consumiveis'] + v['startup_terc'] + v['valor_equip_terc'] + v['valor_insumos_terc']
-    preco_terc = custo_terc * (1 + v['margem_terc']/100)
-    lucro_terc = preco_terc - custo_terc
-    
-    return {
-        'custo_dir': custo_dir,
-        'preco_cliente': preco_cliente,
-        'lucro_dir': lucro_dir,
-        'custo_terc': custo_terc,
-        'preco_terc': preco_terc,
-        'lucro_terc': lucro_terc
-    }
-
-# Interface
-st.header("Orcamento")
+st.header("💰 ORÇAMENTO (atualiza em tempo real)")
 
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader("Modelo Direto")
-    st.session_state.valores['equip_cond'] = st.number_input("Condensadoras", value=st.session_state.valores['equip_cond'], step=5000.0)
-    st.session_state.valores['equip_evap'] = st.number_input("Evaporadoras", value=st.session_state.valores['equip_evap'], step=5000.0)
+st.subheader("🎯 MODELO DIRETO")
+
+with st.expander("📦 Equipamentos", expanded=True):
+    st.session_state.valores['equip_cond'] = st.number_input("Condensadoras/Chiller", value=st.session_state.valores['equip_cond'], step=5000.0)
+    st.session_state.valores['equip_evap'] = st.number_input("Evaporadoras/Fan Coils", value=st.session_state.valores['equip_evap'], step=5000.0)
+    st.session_state.valores['equip_bms'] = st.number_input("BMS/Controles", value=st.session_state.valores['equip_bms'], step=1000.0)
+
+with st.expander("🔩 Insumos", expanded=True):
     st.session_state.valores['ins_cobre'] = st.number_input("Cobre + Isolante", value=st.session_state.valores['ins_cobre'], step=1000.0)
-    st.session_state.valores['mao_tec'] = st.number_input("Mao de Obra", value=st.session_state.valores['mao_tec'], step=2000.0)
+    st.session_state.valores['ins_drenos'] = st.number_input("Drenos + Eletrodutos", value=st.session_state.valores['ins_drenos'], step=500.0)
+    st.session_state.valores['ins_outros'] = st.number_input("Outros insumos", value=st.session_state.valores['ins_outros'], step=500.0)
+
+with st.expander("👷 Mão de Obra", expanded=True):
+    st.session_state.valores['mao_tec'] = st.number_input("Técnicos", value=st.session_state.valores['mao_tec'], step=2000.0)
+    st.session_state.valores['mao_aux'] = st.number_input("Auxiliares", value=st.session_state.valores['mao_aux'], step=1000.0)
+    st.session_state.valores['mao_eng'] = st.number_input("Engenharia/Projeto", value=st.session_state.valores['mao_eng'], step=1000.0)
+
+with st.expander("⚙️ Serviços", expanded=True):
+    st.session_state.valores['serv_startup'] = st.number_input("Startup/Comissionamento", value=st.session_state.valores['serv_startup'], step=500.0)
+    st.session_state.valores['serv_testes'] = st.number_input("Testes + Carga de gás", value=st.session_state.valores['serv_testes'], step=500.0)
+
+col_p1, col_p2, col_p3 = st.columns(3)
+with col_p1:
     st.session_state.valores['garantia'] = st.number_input("Garantia %", value=st.session_state.valores['garantia'], step=0.5)
+with col_p2:
+    st.session_state.valores['adm'] = st.number_input("Adm/Frete %", value=st.session_state.valores['adm'], step=0.5)
+with col_p3:
     st.session_state.valores['margem_dir'] = st.number_input("Margem %", value=st.session_state.valores['margem_dir'], step=1.0)
 
 with col2:
-    st.subheader("Modelo Terceiro")
-    st.session_state.valores['mao_terc'] = st.number_input("Mao de obra", value=st.session_state.valores['mao_terc'], step=2000.0)
-    st.session_state.valores['consumiveis'] = st.number_input("Consumiveis", value=st.session_state.valores['consumiveis'], step=500.0)
-    st.session_state.valores['margem_terc'] = st.number_input("Margem %", value=st.session_state.valores['margem_terc'], step=1.0)
+st.subheader("🎯 MODELO TERCEIRO")
 
-resultados = calcular()
+st.session_state.valores['fornece_equip'] = st.checkbox("Você fornece equipamentos?", value=st.session_state.valores['fornece_equip'])
+if st.session_state.valores['fornece_equip']:
+    valor_padrao = st.session_state.valores['equip_cond'] + st.session_state.valores['equip_evap']
+    st.session_state.valores['valor_equip_terc'] = st.number_input("Valor equipamentos", value=valor_padrao, step=5000.0)
+
+st.session_state.valores['fornece_insumos'] = st.checkbox("Você fornece insumos?", value=st.session_state.valores['fornece_insumos'])
+if st.session_state.valores['fornece_insumos']:
+    st.session_state.valores['valor_insumos_terc'] = st.number_input("Valor insumos", value=st.session_state.valores['ins_cobre'], step=2000.0)
 
 st.markdown("---")
-st.header("Resultados")
+st.session_state.valores['mao_terc'] = st.number_input("Mão de obra", value=st.session_state.valores['mao_terc'], step=2000.0)
+st.session_state.valores['consumiveis'] = st.number_input("Consumíveis", value=st.session_state.valores['consumiveis'], step=500.0)
+st.session_state.valores['startup_terc'] = st.number_input("Startup", value=st.session_state.valores['startup_terc'], step=500.0)
+st.session_state.valores['margem_terc'] = st.number_input("Margem Terceiro %", value=st.session_state.valores['margem_terc'], step=1.0)
 
-colR1, colR2 = st.columns(2)
+resultados = calcular_tudo()
 
-with colR1:
-    st.metric("Direto - Preco Cliente", f"R$ {resultados['preco_cliente']:,.2f}")
-    st.metric("Direto - Lucro", f"R$ {resultados['lucro_dir']:,.2f}")
+st.markdown("---")
+col_res1, col_res2 = st.columns(2)
 
-with colR2:
-    st.metric("Terceiro - Preco Construtora", f"R$ {resultados['preco_terc']:,.2f}")
-    st.metric("Terceiro - Lucro", f"R$ {resultados['lucro_terc']:,.2f}")
+with col_res1:
+st.subheader("📊 RESULTADO DIRETO")
+st.metric("💰 Seu Custo Total", f"R$ {resultados['custo_total_dir']:,.2f}")
+st.metric("🏷️ Preço para Cliente", f"R$ {resultados['preco_cliente']:,.2f}")
+st.metric("📈 Seu Lucro", f"R$ {resultados['lucro_dir']:,.2f}")
 
-if resultados['lucro_dir'] > resultados['lucro_terc']:
-    st.success(f"Direto e R$ {resultados['lucro_dir'] - resultados['lucro_terc']:,.2f} mais lucrativo")
+with col_res2:
+st.subheader("📊 RESULTADO TERCEIRO")
+st.metric("💰 Seu Custo Total", f"R$ {resultados['custo_total_terc']:,.2f}")
+st.metric("🏷️ Preço para Construtora", f"R$ {resultados['preco_terc']:,.2f}")
+st.metric("📈 Seu Lucro", f"R$ {resultados['lucro_terc']:,.2f}")
+
+st.markdown("---")
+diferenca = resultados['lucro_dir'] - resultados['lucro_terc']
+if diferenca > 0:
+st.success(f"✅ **Recomendação:** Modelo DIRETO é R$ {diferenca:,.2f} mais lucrativo")
 else:
-    st.success(f"Terceiro tem lucro de R$ {resultados['lucro_terc']:,.2f}")
+st.info(f"ℹ️ **Recomendação:** Modelo TERCEIRO tem lucro de R$ {resultados['lucro_terc']:,.2f} com menos risco")
+
+st.caption("💡 **Faça upload do projeto (PDF, TXT, DWG) ou preencha manualmente. O sistema extrai automaticamente as informações!**")
