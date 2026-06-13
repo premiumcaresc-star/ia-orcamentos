@@ -2,6 +2,15 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
+import tempfile
+import os
+
+# Tentar importar bibliotecas para PDF (opcionais)
+try:
+    import PyPDF2
+    PDF_SUPPORT = True
+except ImportError:
+    PDF_SUPPORT = False
 
 st.set_page_config(page_title="IA Orçamentos Climatização", page_icon="🌡️", layout="wide")
 
@@ -9,7 +18,27 @@ st.title("🌡️ IA Orçamentos Climatização - Análise de Projetos")
 st.caption(f"Data: {datetime.now().strftime('%d/%m/%Y')}")
 st.markdown("---")
 
-# ========== FUNÇÕES DE ANÁLISE DE PROJETO ==========
+# ========== FUNÇÕES DE ANÁLISE DE ARQUIVOS ==========
+
+def extrair_texto_pdf(arquivo_pdf):
+    """Extrai texto de arquivo PDF"""
+    try:
+        if not PDF_SUPPORT:
+            return None
+        pdf_reader = PyPDF2.PdfReader(arquivo_pdf)
+        texto_completo = ""
+        for pagina in pdf_reader.pages:
+            texto = pagina.extract_text()
+            if texto:
+                texto_completo += texto + " "
+        return texto_completo
+    except Exception as e:
+        return None
+
+def extrair_info_dwg(arquivo_dwg):
+    """Simula extração de informações do DWG (por enquanto baseado no nome)"""
+    # Por enquanto, retorna uma mensagem orientativa
+    return f"Arquivo DWG detectado: {arquivo_dwg.name}. Análise avançada disponível na versão profissional."
 
 def analisar_descricao_projeto(descricao):
     """Extrai informações automáticas da descrição do projeto"""
@@ -21,7 +50,8 @@ def analisar_descricao_projeto(descricao):
         "carga_tr": 20,
         "qtd_evaporadoras": 8,
         "metros_tubo": 150,
-        "servicos_extras": []
+        "servicos_extras": [],
+        "texto_original": descricao[:500]
     }
     
     # Detectar sistema
@@ -33,9 +63,12 @@ def analisar_descricao_projeto(descricao):
         resultados["sistema"] = "Split"
     
     # Extrair área
-    area_match = re.search(r'(\d+)\s*m[²2]', desc_lower)
-    if area_match:
-        resultados["area_m2"] = int(area_match.group(1))
+    padroes_area = [r'(\d+)\s*m[²2]', r'(\d+)\s*metros quadrados', r'área[:\s]*(\d+)']
+    for padrao in padroes_area:
+        area_match = re.search(padrao, desc_lower)
+        if area_match:
+            resultados["area_m2"] = int(area_match.group(1))
+            break
     
     # Extrair carga térmica
     tr_match = re.search(r'(\d+(?:\.\d+)?)\s*tr', desc_lower)
@@ -51,7 +84,6 @@ def analisar_descricao_projeto(descricao):
     if evap_match:
         resultados["qtd_evaporadoras"] = int(evap_match.group(1))
     else:
-        # Estimar baseado na área
         if resultados["area_m2"] > 0:
             resultados["qtd_evaporadoras"] = max(4, round(resultados["area_m2"] / 70))
     
@@ -68,6 +100,8 @@ def analisar_descricao_projeto(descricao):
         resultados["servicos_extras"].append("BMS/Automação")
     if "garantia" in desc_lower:
         resultados["servicos_extras"].append("Garantia Estendida")
+    if "solda" in desc_lower:
+        resultados["servicos_extras"].append("Solda Especializada")
     
     return resultados
 
@@ -82,24 +116,27 @@ def calcular_precos_por_analise(analise):
         equip_cond = carga * 3500  # R$ 3.500 por TR
         equip_evap = qtd_evap * 4200
         mao_tec = carga * 800
-        tubulacao = metros_tubo * 63  # cobre + isolante
+        tubulacao = metros_tubo * 63
+        startup = 3500
     elif sistema == "Água Gelada":
         equip_cond = carga * 2800
         equip_evap = qtd_evap * 2500
         mao_tec = carga * 700
         tubulacao = metros_tubo * 82
+        startup = 4500
     else:  # Split
         equip_cond = carga * 3000
         equip_evap = qtd_evap * 2000
         mao_tec = carga * 600
         tubulacao = metros_tubo * 50
+        startup = 2500
     
     return {
         "equip_cond": equip_cond,
         "equip_evap": equip_evap,
         "ins_cobre": tubulacao,
         "mao_tec": mao_tec,
-        "serv_startup": 3500 if sistema == "VRF/VRV" else 4500,
+        "serv_startup": startup,
         "sistema": sistema,
         "carga_tr": carga,
         "qtd_evap": qtd_evap
@@ -136,7 +173,6 @@ if 'valores' not in st.session_state:
 def calcular_tudo():
     v = st.session_state.valores
     
-    # Direto
     custo_equip = v['equip_cond'] + v['equip_evap'] + v['equip_bms']
     custo_insumos = v['ins_cobre'] + v['ins_drenos'] + v['ins_outros']
     custo_mao = v['mao_tec'] + v['mao_aux'] + v['mao_eng']
@@ -146,7 +182,6 @@ def calcular_tudo():
     preco_cliente = custo_total_dir * (1 + v['garantia']/100 + v['adm']/100) * (1 + v['margem_dir']/100)
     lucro_dir = preco_cliente - (custo_total_dir * (1 + v['garantia']/100 + v['adm']/100))
     
-    # Terceiro
     custo_terc_base = v['mao_terc'] + v['consumiveis'] + v['startup_terc'] + v['valor_equip_terc'] + v['valor_insumos_terc']
     preco_terc = custo_terc_base * (1 + v['margem_terc']/100)
     lucro_terc = preco_terc - custo_terc_base
@@ -163,36 +198,38 @@ def calcular_tudo():
 # ========== ABA DE UPLOAD E ANÁLISE ==========
 st.header("📁 ANÁLISE AUTOMÁTICA DO PROJETO")
 
-tab_upload, tab_manual, tab_exemplo = st.tabs(["📤 Upload/Descrição", "✏️ Preenchimento Manual", "📖 Exemplos"])
+tab_upload, tab_manual, tab_exemplo = st.tabs(["📤 Upload de Arquivo (PDF/DWG)", "✏️ Preenchimento Manual", "📖 Exemplos"])
 
 with tab_upload:
-    st.subheader("Cole a descrição do projeto ou faça upload")
+    st.subheader("Faça upload do projeto")
     
-    opcao = st.radio("Como quer informar o projeto?", ["📝 Digitar descrição", "📎 Upload de arquivo"])
+    arquivo = st.file_uploader(
+        "Selecione o arquivo do projeto",
+        type=['pdf', 'dwg', 'dxf', 'txt', 'csv', 'xlsx'],
+        help="Formatos suportados: PDF, DWG, DXF, TXT, CSV, XLSX"
+    )
     
-    if opcao == "📝 Digitar descrição":
-        descricao_projeto = st.text_area(
-            "Descrição do projeto:",
-            height=150,
-            placeholder="Exemplo: Projeto de climatização para escritório de 850m². Sistema VRF com 28.5 TR. 12 evaporadoras. Incluir startup e comissionamento."
-        )
+    if arquivo:
+        st.info(f"📄 Arquivo carregado: {arquivo.name} ({arquivo.size} bytes)")
         
-        if st.button("🔍 Analisar Projeto", use_container_width=True):
-            if descricao_projeto:
-                with st.spinner("Analisando projeto..."):
-                    analise = analisar_descricao_projeto(descricao_projeto)
+        # Processar baseado no tipo
+        if arquivo.name.lower().endswith('.pdf'):
+            st.info("🔄 Processando arquivo PDF...")
+            texto_extraido = extrair_texto_pdf(arquivo)
+            if texto_extraido:
+                with st.spinner("Analisando PDF..."):
+                    analise = analisar_descricao_projeto(texto_extraido)
                     precos_sugeridos = calcular_precos_por_analise(analise)
                     
-                    # Atualizar session state com valores sugeridos
                     st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
                     st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
                     st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
                     st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
                     st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
                     
-                    st.success("✅ Projeto analisado! Valores atualizados automaticamente.")
+                    st.success("✅ PDF processado com sucesso!")
                     
-                    st.subheader("📊 Informações extraídas:")
+                    st.subheader("📊 Informações extraídas do PDF:")
                     col_a1, col_a2, col_a3 = st.columns(3)
                     with col_a1:
                         st.metric("Sistema", analise['sistema'])
@@ -207,14 +244,60 @@ with tab_upload:
                     
                     st.rerun()
             else:
-                st.warning("Digite uma descrição do projeto.")
-    
-    else:  # Upload de arquivo
-        arquivo = st.file_uploader("Carregar arquivo", type=['csv', 'xlsx', 'txt'])
-        if arquivo and st.button("📂 Processar Arquivo", use_container_width=True):
+                st.warning("Não foi possível extrair texto do PDF. Tente colar a descrição manualmente na aba abaixo.")
+                st.text_area("Ou cole o texto do projeto aqui:", height=150, key="pdf_texto_alternativo")
+                if st.button("Analisar texto colado", key="btn_pdf_alt"):
+                    if st.session_state.pdf_texto_alternativo:
+                        analise = analisar_descricao_projeto(st.session_state.pdf_texto_alternativo)
+                        precos_sugeridos = calcular_precos_por_analise(analise)
+                        st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
+                        st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
+                        st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
+                        st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
+                        st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
+                        st.success("✅ Texto analisado!")
+                        st.rerun()
+        
+        elif arquivo.name.lower().endswith(('.dwg', '.dxf')):
+            st.info("📐 Arquivo CAD detectado (DWG/DXF)")
+            st.warning("""
+            **Análise de arquivos DWG:** 
+            O Streamlit Cloud não suporta extração nativa de DWG. 
+            
+            **Soluções:**
+            1. Descreva manualmente o projeto na aba "Preenchimento Manual"
+            2. Exporte o DWG para PDF e faça upload novamente
+            3. Cole as informações do projeto no campo abaixo
+            """)
+            
+            texto_manual = st.text_area("Cole as informações do projeto (área, carga, equipamentos):", height=150, key="dwg_texto")
+            if st.button("Analisar informações", key="btn_dwg"):
+                if texto_manual:
+                    analise = analisar_descricao_projeto(texto_manual)
+                    precos_sugeridos = calcular_precos_por_analise(analise)
+                    st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
+                    st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
+                    st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
+                    st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
+                    st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
+                    st.success("✅ Informações aplicadas!")
+                    st.rerun()
+        
+        elif arquivo.name.lower().endswith(('.csv', '.xlsx')):
             try:
-                conteudo = arquivo.read().decode('utf-8')
-                analise = analisar_descricao_projeto(conteudo)
+                if arquivo.name.endswith('.csv'):
+                    df = pd.read_csv(arquivo)
+                else:
+                    df = pd.read_excel(arquivo)
+                st.success("✅ Planilha carregada! Use a aba 'Preenchimento Manual' para inserir os dados.")
+                st.dataframe(df.head())
+            except Exception as e:
+                st.error(f"Erro ao ler planilha: {e}")
+        
+        else:  # TXT
+            texto = arquivo.read().decode('utf-8')
+            with st.spinner("Analisando arquivo de texto..."):
+                analise = analisar_descricao_projeto(texto)
                 precos_sugeridos = calcular_precos_por_analise(analise)
                 
                 st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
@@ -223,10 +306,8 @@ with tab_upload:
                 st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
                 st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
                 
-                st.success("✅ Arquivo processado! Valores atualizados.")
+                st.success("✅ Arquivo de texto processado!")
                 st.rerun()
-            except:
-                st.error("Erro ao processar arquivo. Tente colar a descrição manualmente.")
 
 with tab_manual:
     st.subheader("Preencha os dados manualmente")
@@ -261,8 +342,12 @@ with tab_manual:
         st.rerun()
 
 with tab_exemplo:
-    st.subheader("📋 Exemplo de descrição que funciona bem")
-    st.code("""
+    st.subheader("📋 Exemplos de descrição que funcionam bem")
+    
+    ex1, ex2 = st.tabs(["VRF/VRV", "Água Gelada"])
+    
+    with ex1:
+        st.code("""
 Projeto de climatização para edifício comercial:
 - Área total: 850 m²
 - Sistema VRF/VRV
@@ -271,8 +356,19 @@ Projeto de climatização para edifício comercial:
 - Tubulação de cobre com isolamento térmico
 - Incluir startup e comissionamento do sistema
 - Necessário integração com BMS
-    """)
-    st.info("💡 Cole uma descrição similar e clique em 'Analisar Projeto' para preencher automaticamente os valores.")
+        """)
+    
+    with ex2:
+        st.code("""
+Sistema de água gelada para shopping center:
+- Área climatizada: 2500 m²
+- Chiller de 120 TR
+- 45 fan coils tipo cassete
+- Torre de resfriamento
+- Comissionamento completo
+        """)
+    
+    st.info("💡 **Dica:** Cole uma descrição similar e clique em 'Analisar Projeto' para preencher automaticamente os valores.")
 
 # ========== LINHA DIVISÓRIA ==========
 st.markdown("---")
@@ -353,4 +449,5 @@ if resultados['lucro_dir'] > resultados['lucro_terc']:
 else:
     st.info(f"ℹ️ **Recomendação:** Modelo TERCEIRO tem lucro de R$ {resultados['lucro_terc']:,.2f} com menos risco")
 
-st.caption("💡 **Qualquer alteração nos valores atualiza os preços automaticamente! Use a aba 'Upload/Descrição' para análise automática do projeto.**")
+st.caption("💡 **Qualquer alteração nos valores atualiza os preços automaticamente!**")
+st.caption("📌 **PDF e DWG:** Para extração avançada de DWG, considere a versão profissional com integração CAD.")
