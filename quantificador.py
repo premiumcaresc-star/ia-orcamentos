@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 
 def criar_tabela_quantificacao(sistema):
     """Cria interface para quantificação de equipamentos"""
@@ -8,7 +7,7 @@ def criar_tabela_quantificacao(sistema):
     
     if sistema == "VRF/VRV":
         equipamentos = {
-            "Condensadoras VRF/VRV (TR)": {
+            "Condensadoras VRF (TR)": {
                 "unidade": "TR",
                 "valor_padrao": 28.5,
                 "preco_referencia": 3500,
@@ -78,7 +77,7 @@ def criar_tabela_quantificacao(sistema):
                 "preco_referencia": 800,
                 "descricao": "Torre para rejeição de calor"
             },
-            "Bombas d'Áua": {
+            "Bombas d'Água": {
                 "unidade": "conjunto",
                 "valor_padrao": 2,
                 "preco_referencia": 5000,
@@ -111,52 +110,10 @@ def criar_tabela_quantificacao(sistema):
                 "valor_padrao": 2,
                 "preco_referencia": 3500,
                 "descricao": "24.000 BTU/h"
-            },
-            "MultiSplit Evaporadoras": {
-                "unidade": "unidades",
-                "valor_padrao": 0,
-                "preco_referencia": 1500,
-                "descricao": "Para sistemas MultiSplit"
-            },
-            "Condensadoras MultiSplit": {
-                "unidade": "unidades",
-                "valor_padrao": 0,
-                "preco_referencia": 3000,
-                "descricao": "Para sistemas MultiSplit"
             }
         }
     
     return equipamentos
-
-def calcular_custo_equipamentos(quantidades, precos_referencia, sistema):
-    """Calcula o custo total baseado nas quantidades informadas"""
-    
-    custo_total = 0
-    detalhes = {}
-    
-    for equipamento, dados in quantidades.items():
-        quantidade = dados["quantidade"]
-        preco_unitario = precos_referencia.get(equipamento, 0)
-        
-        if "TR" in equipamento or "tr" in equipamento.lower():
-            # Para equipamentos baseados em TR
-            if sistema == "Água Gelada" and "Chiller" in equipamento:
-                preco_total = quantidade * preco_unitario
-            elif sistema == "VRF/VRV" and "Condensadoras" in equipamento:
-                preco_total = quantidade * preco_unitario
-            else:
-                preco_total = quantidade * preco_unitario
-        else:
-            preco_total = quantidade * preco_unitario
-        
-        custo_total += preco_total
-        detalhes[equipamento] = {
-            "quantidade": quantidade,
-            "preco_unitario": preco_unitario,
-            "preco_total": preco_total
-        }
-    
-    return custo_total, detalhes
 
 def criar_interface_quantificacao(sistema, uf="SP"):
     """Cria interface completa de quantificação"""
@@ -166,74 +123,67 @@ def criar_interface_quantificacao(sistema, uf="SP"):
     st.markdown("---")
     st.header("🔧 Dimensionamento do Projeto")
     
-    # Tabela de equipamentos
     equipamentos = criar_tabela_quantificacao(sistema)
     
-    # Carregar preços de referência
-    precos_uf = get_precos_equipamentos(uf)
-    precos_sistema = precos_uf.get(sistema, {})
+    try:
+        precos_uf = get_precos_equipamentos(uf)
+        precos_sistema = precos_uf.get(sistema, {})
+    except:
+        precos_sistema = {}
     
-    # Criar formulário de quantidades
     quantidades = {}
+    custo_equipamentos = 0
     
     col1, col2 = st.columns(2)
     
     for i, (equipamento, dados) in enumerate(equipamentos.items()):
         with col1 if i % 2 == 0 else col2:
-            with st.container():
+            with st.container(border=True):
                 st.markdown(f"**{equipamento}**")
-                st.caption(f"{dados['descricao']}")
+                st.caption(dados['descricao'])
                 
                 quantidade = st.number_input(
                     f"Quantidade ({dados['unidade']})",
-                    min_value=0,
-                    value=dados['valor_padrao'],
-                    step=1,
+                    min_value=0.0,
+                    value=float(dados['valor_padrao']),
+                    step=1.0,
                     key=f"qtd_{equipamento}"
                 )
                 
-                preco_unitario = precos_sistema.get(equipamento.split('(')[0].strip().replace(" ", "_").lower(), dados['preco_referencia'])
+                # Buscar preço unitário
+                chave_busca = equipamento.split('(')[0].strip().replace(" ", "_").lower()
+                preco_unitario = dados['preco_referencia']
+                
+                for k, v in precos_sistema.items():
+                    if k.lower() in chave_busca or chave_busca in k.lower():
+                        preco_unitario = v
+                        break
+                
+                subtotal = quantidade * preco_unitario
+                custo_equipamentos += subtotal
                 
                 col_q1, col_q2 = st.columns(2)
                 with col_q1:
                     st.caption(f"Preço unitário: R$ {preco_unitario:,.2f}")
                 with col_q2:
-                    st.caption(f"Subtotal: R$ {quantidade * preco_unitario:,.2f}")
+                    st.caption(f"Subtotal: R$ {subtotal:,.2f}")
                 
                 quantidades[equipamento] = {
                     "quantidade": quantidade,
                     "preco_unitario": preco_unitario,
+                    "subtotal": subtotal,
                     "unidade": dados["unidade"]
                 }
     
-    # Calcular total
-    custo_equipamentos, detalhes = calcular_custo_equipamentos(quantidades, {}, sistema)
-    
-    # Recalcular com os preços corretos
-    custo_equipamentos = 0
-    for equipamento, dados in quantidades.items():
-        chave_equip = equipamento.split('(')[0].strip().replace(" ", "_").lower()
-        preco = precos_sistema.get(chave_equip, 0)
-        if preco == 0:
-            # Tentar mapeamento alternativo
-            for k, v in precos_sistema.items():
-                if k.lower() in equipamento.lower():
-                    preco = v
-                    break
-        if preco == 0:
-            preco = equipamentos[equipamento]["preco_referencia"]
-        
-        custo_equipamentos += dados["quantidade"] * preco
-    
     st.markdown("---")
     
-    # Resumo
     with st.expander("📋 Resumo da Quantificação", expanded=True):
         col_r1, col_r2, col_r3 = st.columns(3)
         with col_r1:
             st.metric("Custo Total Equipamentos", f"R$ {custo_equipamentos:,.2f}")
         with col_r2:
-            st.metric("Total de Itens", f"{sum(d['quantidade'] for d in quantidades.values())} unidades")
+            total_itens = sum(d['quantidade'] for d in quantidades.values())
+            st.metric("Total de Itens", f"{total_itens:.0f} unidades")
         with col_r3:
             st.metric("Sistema", sistema)
     
