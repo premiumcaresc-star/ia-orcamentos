@@ -1,45 +1,108 @@
 import streamlit as st
+import pandas as pd
+import re
 from datetime import datetime
 
 st.set_page_config(page_title="IA Orçamentos Climatização", page_icon="🌡️", layout="wide")
 
-st.title("🌡️ IA Orçamentos Climatização")
+st.title("🌡️ IA Orçamentos Climatização - Análise de Projetos")
 st.caption(f"Data: {datetime.now().strftime('%d/%m/%Y')}")
 st.markdown("---")
 
-# ========== FUNÇÃO PARA CALCULAR PREÇOS DINAMICAMENTE ==========
-def calcular_precos(equip_cond, equip_evap, equip_bms, ins_cobre, ins_drenos, ins_outros,
-                    mao_tec, mao_aux, mao_eng, serv_startup, serv_testes,
-                    garantia_pct, adm_pct, margem_pct,
-                    fornece_equip, fornece_insumos, valor_equip_terc, valor_insumos_terc,
-                    mao_terc, consumiveis, startup_terc, margem_terc_pct):
+# ========== FUNÇÕES DE ANÁLISE DE PROJETO ==========
+
+def analisar_descricao_projeto(descricao):
+    """Extrai informações automáticas da descrição do projeto"""
+    desc_lower = descricao.lower()
     
-    # Cálculos Modelo Direto
-    custo_equip = equip_cond + equip_evap + equip_bms
-    custo_insumos = ins_cobre + ins_drenos + ins_outros
-    custo_mao = mao_tec + mao_aux + mao_eng
-    custo_serv = serv_startup + serv_testes
-    custo_total_dir = custo_equip + custo_insumos + custo_mao + custo_serv
+    resultados = {
+        "sistema": "VRF/VRV",
+        "area_m2": 500,
+        "carga_tr": 20,
+        "qtd_evaporadoras": 8,
+        "metros_tubo": 150,
+        "servicos_extras": []
+    }
     
-    preco_cliente = custo_total_dir * (1 + garantia_pct/100 + adm_pct/100) * (1 + margem_pct/100)
-    lucro_dir = preco_cliente - (custo_total_dir * (1 + garantia_pct/100 + adm_pct/100))
+    # Detectar sistema
+    if "água gelada" in desc_lower or "chiller" in desc_lower:
+        resultados["sistema"] = "Água Gelada"
+    elif "vrf" in desc_lower or "vrv" in desc_lower:
+        resultados["sistema"] = "VRF/VRV"
+    elif "split" in desc_lower:
+        resultados["sistema"] = "Split"
     
-    # Cálculos Modelo Terceiro
-    custo_terc_base = mao_terc + consumiveis + startup_terc + valor_equip_terc + valor_insumos_terc
-    preco_construtora = custo_terc_base * (1 + margem_terc_pct/100)
-    lucro_terc = preco_construtora - custo_terc_base
+    # Extrair área
+    area_match = re.search(r'(\d+)\s*m[²2]', desc_lower)
+    if area_match:
+        resultados["area_m2"] = int(area_match.group(1))
+    
+    # Extrair carga térmica
+    tr_match = re.search(r'(\d+(?:\.\d+)?)\s*tr', desc_lower)
+    if tr_match:
+        resultados["carga_tr"] = float(tr_match.group(1))
+    
+    btu_match = re.search(r'(\d+)\s*btu', desc_lower)
+    if btu_match:
+        resultados["carga_tr"] = round(int(btu_match.group(1)) / 12000, 1)
+    
+    # Extrair evaporadoras
+    evap_match = re.search(r'(\d+)\s*evaporadoras?', desc_lower)
+    if evap_match:
+        resultados["qtd_evaporadoras"] = int(evap_match.group(1))
+    else:
+        # Estimar baseado na área
+        if resultados["area_m2"] > 0:
+            resultados["qtd_evaporadoras"] = max(4, round(resultados["area_m2"] / 70))
+    
+    # Estimar tubulação
+    if resultados["carga_tr"] > 0:
+        resultados["metros_tubo"] = int(resultados["carga_tr"] * 15)
+    else:
+        resultados["metros_tubo"] = int(resultados["area_m2"] * 0.3)
+    
+    # Detectar serviços extras
+    if "startup" in desc_lower or "comissionamento" in desc_lower:
+        resultados["servicos_extras"].append("Startup/Comissionamento")
+    if "bms" in desc_lower or "automação" in desc_lower:
+        resultados["servicos_extras"].append("BMS/Automação")
+    if "garantia" in desc_lower:
+        resultados["servicos_extras"].append("Garantia Estendida")
+    
+    return resultados
+
+def calcular_precos_por_analise(analise):
+    """Calcula valores sugeridos baseados na análise"""
+    sistema = analise["sistema"]
+    carga = analise["carga_tr"]
+    qtd_evap = analise["qtd_evaporadoras"]
+    metros_tubo = analise["metros_tubo"]
+    
+    if sistema == "VRF/VRV":
+        equip_cond = carga * 3500  # R$ 3.500 por TR
+        equip_evap = qtd_evap * 4200
+        mao_tec = carga * 800
+        tubulacao = metros_tubo * 63  # cobre + isolante
+    elif sistema == "Água Gelada":
+        equip_cond = carga * 2800
+        equip_evap = qtd_evap * 2500
+        mao_tec = carga * 700
+        tubulacao = metros_tubo * 82
+    else:  # Split
+        equip_cond = carga * 3000
+        equip_evap = qtd_evap * 2000
+        mao_tec = carga * 600
+        tubulacao = metros_tubo * 50
     
     return {
-        'custo_total_dir': custo_total_dir,
-        'preco_cliente': preco_cliente,
-        'lucro_dir': lucro_dir,
-        'custo_total_terc': custo_terc_base,
-        'preco_construtora': preco_construtora,
-        'lucro_terc': lucro_terc,
-        'custo_equip': custo_equip,
-        'custo_insumos': custo_insumos,
-        'custo_mao': custo_mao,
-        'custo_serv': custo_serv
+        "equip_cond": equip_cond,
+        "equip_evap": equip_evap,
+        "ins_cobre": tubulacao,
+        "mao_tec": mao_tec,
+        "serv_startup": 3500 if sistema == "VRF/VRV" else 4500,
+        "sistema": sistema,
+        "carga_tr": carga,
+        "qtd_evap": qtd_evap
     }
 
 # ========== INICIALIZAR SESSION STATE ==========
@@ -69,215 +132,225 @@ if 'valores' not in st.session_state:
         'margem_terc': 25.0
     }
 
-# ========== SIDEBAR ==========
-with st.sidebar:
-    st.header("📋 Dados do Projeto")
-    cliente = st.text_input("Cliente", "Edifício Comercial Paulista")
-    tipo_sistema = st.selectbox("Sistema", ["VRF/VRV", "Água Gelada", "Split"])
-    area = st.number_input("Área (m²)", min_value=0.0, value=850.0, step=50.0)
-    carga_tr = st.number_input("Carga (TR)", min_value=0.0, value=28.5, step=1.0)
+# ========== FUNÇÃO DE CÁLCULO ==========
+def calcular_tudo():
+    v = st.session_state.valores
     
-    st.markdown("---")
+    # Direto
+    custo_equip = v['equip_cond'] + v['equip_evap'] + v['equip_bms']
+    custo_insumos = v['ins_cobre'] + v['ins_drenos'] + v['ins_outros']
+    custo_mao = v['mao_tec'] + v['mao_aux'] + v['mao_eng']
+    custo_serv = v['serv_startup'] + v['serv_testes']
+    custo_total_dir = custo_equip + custo_insumos + custo_mao + custo_serv
     
-    # Botão para valores sugeridos por sistema
-    if st.button("🔧 Valores sugeridos para este sistema"):
-        if tipo_sistema == "VRF/VRV":
-            st.session_state.valores['equip_cond'] = 89000.0
-            st.session_state.valores['equip_evap'] = 45000.0
-            st.session_state.valores['mao_tec'] = 28000.0
-        elif tipo_sistema == "Água Gelada":
-            st.session_state.valores['equip_cond'] = 85000.0
-            st.session_state.valores['equip_evap'] = 35000.0
-            st.session_state.valores['mao_tec'] = 32000.0
-        else:  # Split
-            st.session_state.valores['equip_cond'] = 40000.0
-            st.session_state.valores['equip_evap'] = 15000.0
-            st.session_state.valores['mao_tec'] = 15000.0
+    preco_cliente = custo_total_dir * (1 + v['garantia']/100 + v['adm']/100) * (1 + v['margem_dir']/100)
+    lucro_dir = preco_cliente - (custo_total_dir * (1 + v['garantia']/100 + v['adm']/100))
+    
+    # Terceiro
+    custo_terc_base = v['mao_terc'] + v['consumiveis'] + v['startup_terc'] + v['valor_equip_terc'] + v['valor_insumos_terc']
+    preco_terc = custo_terc_base * (1 + v['margem_terc']/100)
+    lucro_terc = preco_terc - custo_terc_base
+    
+    return {
+        'custo_total_dir': custo_total_dir,
+        'preco_cliente': preco_cliente,
+        'lucro_dir': lucro_dir,
+        'custo_total_terc': custo_terc_base,
+        'preco_terc': preco_terc,
+        'lucro_terc': lucro_terc
+    }
+
+# ========== ABA DE UPLOAD E ANÁLISE ==========
+st.header("📁 ANÁLISE AUTOMÁTICA DO PROJETO")
+
+tab_upload, tab_manual, tab_exemplo = st.tabs(["📤 Upload/Descrição", "✏️ Preenchimento Manual", "📖 Exemplos"])
+
+with tab_upload:
+    st.subheader("Cole a descrição do projeto ou faça upload")
+    
+    opcao = st.radio("Como quer informar o projeto?", ["📝 Digitar descrição", "📎 Upload de arquivo"])
+    
+    if opcao == "📝 Digitar descrição":
+        descricao_projeto = st.text_area(
+            "Descrição do projeto:",
+            height=150,
+            placeholder="Exemplo: Projeto de climatização para escritório de 850m². Sistema VRF com 28.5 TR. 12 evaporadoras. Incluir startup e comissionamento."
+        )
+        
+        if st.button("🔍 Analisar Projeto", use_container_width=True):
+            if descricao_projeto:
+                with st.spinner("Analisando projeto..."):
+                    analise = analisar_descricao_projeto(descricao_projeto)
+                    precos_sugeridos = calcular_precos_por_analise(analise)
+                    
+                    # Atualizar session state com valores sugeridos
+                    st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
+                    st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
+                    st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
+                    st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
+                    st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
+                    
+                    st.success("✅ Projeto analisado! Valores atualizados automaticamente.")
+                    
+                    st.subheader("📊 Informações extraídas:")
+                    col_a1, col_a2, col_a3 = st.columns(3)
+                    with col_a1:
+                        st.metric("Sistema", analise['sistema'])
+                        st.metric("Área", f"{analise['area_m2']} m²")
+                    with col_a2:
+                        st.metric("Carga", f"{analise['carga_tr']} TR")
+                        st.metric("Evaporadoras", f"{analise['qtd_evaporadoras']} un")
+                    with col_a3:
+                        st.metric("Tubulação", f"{analise['metros_tubo']} m")
+                        if analise['servicos_extras']:
+                            st.write("**Extras:**", ", ".join(analise['servicos_extras']))
+                    
+                    st.rerun()
+            else:
+                st.warning("Digite uma descrição do projeto.")
+    
+    else:  # Upload de arquivo
+        arquivo = st.file_uploader("Carregar arquivo", type=['csv', 'xlsx', 'txt'])
+        if arquivo and st.button("📂 Processar Arquivo", use_container_width=True):
+            try:
+                conteudo = arquivo.read().decode('utf-8')
+                analise = analisar_descricao_projeto(conteudo)
+                precos_sugeridos = calcular_precos_por_analise(analise)
+                
+                st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
+                st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
+                st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
+                st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
+                st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
+                
+                st.success("✅ Arquivo processado! Valores atualizados.")
+                st.rerun()
+            except:
+                st.error("Erro ao processar arquivo. Tente colar a descrição manualmente.")
+
+with tab_manual:
+    st.subheader("Preencha os dados manualmente")
+    
+    col_m1, col_m2 = st.columns(2)
+    with col_m1:
+        sistema_manual = st.selectbox("Sistema", ["VRF/VRV", "Água Gelada", "Split"])
+        area_manual = st.number_input("Área (m²)", value=850)
+        carga_manual = st.number_input("Carga (TR)", value=28.5)
+    with col_m2:
+        qtd_evap_manual = st.number_input("Quantidade de evaporadoras", value=12)
+        metros_tubo_manual = st.number_input("Metros de tubulação", value=carga_manual * 15)
+    
+    if st.button("📊 Gerar orçamento baseado nestes dados", use_container_width=True):
+        analise_manual = {
+            "sistema": sistema_manual,
+            "carga_tr": carga_manual,
+            "qtd_evaporadoras": qtd_evap_manual,
+            "metros_tubo": metros_tubo_manual,
+            "area_m2": area_manual,
+            "servicos_extras": []
+        }
+        precos = calcular_precos_por_analise(analise_manual)
+        
+        st.session_state.valores['equip_cond'] = precos['equip_cond']
+        st.session_state.valores['equip_evap'] = precos['equip_evap']
+        st.session_state.valores['ins_cobre'] = precos['ins_cobre']
+        st.session_state.valores['mao_tec'] = precos['mao_tec']
+        st.session_state.valores['serv_startup'] = precos['serv_startup']
+        
+        st.success("✅ Dados aplicados! Role para baixo para ver o orçamento.")
         st.rerun()
 
-# ========== COLUNAS PRINCIPAIS ==========
+with tab_exemplo:
+    st.subheader("📋 Exemplo de descrição que funciona bem")
+    st.code("""
+Projeto de climatização para edifício comercial:
+- Área total: 850 m²
+- Sistema VRF/VRV
+- Carga térmica: 28.5 TR
+- 12 evaporadoras tipo cassete
+- Tubulação de cobre com isolamento térmico
+- Incluir startup e comissionamento do sistema
+- Necessário integração com BMS
+    """)
+    st.info("💡 Cole uma descrição similar e clique em 'Analisar Projeto' para preencher automaticamente os valores.")
+
+# ========== LINHA DIVISÓRIA ==========
+st.markdown("---")
+st.header("💰 ORÇAMENTO (atualiza em tempo real)")
+
+# ========== COLUNAS DE EDIÇÃO ==========
 col1, col2 = st.columns(2)
 
-# ========== COLUNA 1 - MODELO DIRETO ==========
 with col1:
-    st.header("🎯 MODELO DIRETO")
-    st.caption("Você → Cliente Final")
+    st.subheader("🎯 MODELO DIRETO")
     
     with st.expander("📦 Equipamentos", expanded=True):
-        equip_cond = st.number_input("Condensadoras/Chiller (R$)", 
-                                      value=st.session_state.valores['equip_cond'], 
-                                      step=5000.0, key="eq_cond",
-                                      on_change=lambda: st.session_state.valores.update({'equip_cond': equip_cond}))
-        equip_evap = st.number_input("Evaporadoras/Fan Coils (R$)", 
-                                      value=st.session_state.valores['equip_evap'], 
-                                      step=5000.0, key="eq_evap")
-        equip_bms = st.number_input("BMS / Controles (R$)", 
-                                     value=st.session_state.valores['equip_bms'], 
-                                     step=1000.0, key="eq_bms")
-        
-        # Atualizar session state
-        st.session_state.valores['equip_cond'] = equip_cond
-        st.session_state.valores['equip_evap'] = equip_evap
-        st.session_state.valores['equip_bms'] = equip_bms
+        st.session_state.valores['equip_cond'] = st.number_input("Condensadoras/Chiller", value=st.session_state.valores['equip_cond'], step=5000.0)
+        st.session_state.valores['equip_evap'] = st.number_input("Evaporadoras/Fan Coils", value=st.session_state.valores['equip_evap'], step=5000.0)
+        st.session_state.valores['equip_bms'] = st.number_input("BMS/Controles", value=st.session_state.valores['equip_bms'], step=1000.0)
     
     with st.expander("🔩 Insumos", expanded=True):
-        ins_cobre = st.number_input("Cobre + Isolante (R$)", 
-                                     value=st.session_state.valores['ins_cobre'], 
-                                     step=1000.0, key="ins_cobre")
-        ins_drenos = st.number_input("Drenos + Eletrodutos (R$)", 
-                                      value=st.session_state.valores['ins_drenos'], 
-                                      step=500.0, key="ins_drenos")
-        ins_outros = st.number_input("Outros insumos (R$)", 
-                                      value=st.session_state.valores['ins_outros'], 
-                                      step=500.0, key="ins_outros")
-        
-        st.session_state.valores['ins_cobre'] = ins_cobre
-        st.session_state.valores['ins_drenos'] = ins_drenos
-        st.session_state.valores['ins_outros'] = ins_outros
+        st.session_state.valores['ins_cobre'] = st.number_input("Cobre + Isolante", value=st.session_state.valores['ins_cobre'], step=1000.0)
+        st.session_state.valores['ins_drenos'] = st.number_input("Drenos + Eletrodutos", value=st.session_state.valores['ins_drenos'], step=500.0)
+        st.session_state.valores['ins_outros'] = st.number_input("Outros insumos", value=st.session_state.valores['ins_outros'], step=500.0)
     
     with st.expander("👷 Mão de Obra", expanded=True):
-        mao_tec = st.number_input("Técnicos (R$)", 
-                                   value=st.session_state.valores['mao_tec'], 
-                                   step=2000.0, key="mao_tec")
-        mao_aux = st.number_input("Auxiliares (R$)", 
-                                   value=st.session_state.valores['mao_aux'], 
-                                   step=1000.0, key="mao_aux")
-        mao_eng = st.number_input("Engenharia/Projeto (R$)", 
-                                   value=st.session_state.valores['mao_eng'], 
-                                   step=1000.0, key="mao_eng")
-        
-        st.session_state.valores['mao_tec'] = mao_tec
-        st.session_state.valores['mao_aux'] = mao_aux
-        st.session_state.valores['mao_eng'] = mao_eng
+        st.session_state.valores['mao_tec'] = st.number_input("Técnicos", value=st.session_state.valores['mao_tec'], step=2000.0)
+        st.session_state.valores['mao_aux'] = st.number_input("Auxiliares", value=st.session_state.valores['mao_aux'], step=1000.0)
+        st.session_state.valores['mao_eng'] = st.number_input("Engenharia/Projeto", value=st.session_state.valores['mao_eng'], step=1000.0)
     
     with st.expander("⚙️ Serviços", expanded=True):
-        serv_startup = st.number_input("Startup/Comissionamento (R$)", 
-                                        value=st.session_state.valores['serv_startup'], 
-                                        step=500.0, key="serv_start")
-        serv_testes = st.number_input("Testes + Carga de gás (R$)", 
-                                       value=st.session_state.valores['serv_testes'], 
-                                       step=500.0, key="serv_test")
-        
-        st.session_state.valores['serv_startup'] = serv_startup
-        st.session_state.valores['serv_testes'] = serv_testes
+        st.session_state.valores['serv_startup'] = st.number_input("Startup/Comissionamento", value=st.session_state.valores['serv_startup'], step=500.0)
+        st.session_state.valores['serv_testes'] = st.number_input("Testes + Carga de gás", value=st.session_state.valores['serv_testes'], step=500.0)
     
-    st.markdown("---")
-    col_p1, col_p2, col_p3 = st.columns(3)
-    with col_p1:
-        garantia = st.number_input("Garantia (%)", value=st.session_state.valores['garantia'], step=0.5, key="gar")
-    with col_p2:
-        adm = st.number_input("Adm/Frete (%)", value=st.session_state.valores['adm'], step=0.5, key="adm")
-    with col_p3:
-        margem_dir = st.number_input("Margem + BDI (%)", value=st.session_state.valores['margem_dir'], step=1.0, key="marg_dir")
-    
-    st.session_state.valores['garantia'] = garantia
-    st.session_state.valores['adm'] = adm
-    st.session_state.valores['margem_dir'] = margem_dir
+    col_perc1, col_perc2, col_perc3 = st.columns(3)
+    with col_perc1:
+        st.session_state.valores['garantia'] = st.number_input("Garantia %", value=st.session_state.valores['garantia'], step=0.5)
+    with col_perc2:
+        st.session_state.valores['adm'] = st.number_input("Adm/Frete %", value=st.session_state.valores['adm'], step=0.5)
+    with col_perc3:
+        st.session_state.valores['margem_dir'] = st.number_input("Margem %", value=st.session_state.valores['margem_dir'], step=1.0)
 
-# ========== COLUNA 2 - MODELO TERCEIRO ==========
 with col2:
-    st.header("🎯 MODELO TERCEIRO")
-    st.caption("Construtora → Você")
+    st.subheader("🎯 MODELO TERCEIRO")
     
-    st.subheader("📋 Quem fornece?")
-    col_f1, col_f2 = st.columns(2)
-    with col_f1:
-        fornece_equip = st.checkbox("Você fornece equipamentos?", 
-                                     value=st.session_state.valores['fornece_equip'], 
-                                     key="for_eq")
-        st.session_state.valores['fornece_equip'] = fornece_equip
-        
-        if fornece_equip:
-            valor_equip_terc = st.number_input("Valor equipamentos (R$)", 
-                                                value=st.session_state.valores['valor_equip_terc'] if st.session_state.valores['valor_equip_terc'] > 0 else equip_cond + equip_evap + equip_bms,
-                                                step=5000.0, key="val_eq")
-            st.session_state.valores['valor_equip_terc'] = valor_equip_terc
-        else:
-            valor_equip_terc = 0.0
-            st.caption("✓ Cliente/Construtora fornece")
+    st.session_state.valores['fornece_equip'] = st.checkbox("Você fornece equipamentos?", value=st.session_state.valores['fornece_equip'])
+    if st.session_state.valores['fornece_equip']:
+        st.session_state.valores['valor_equip_terc'] = st.number_input("Valor equipamentos", value=st.session_state.valores['valor_equip_terc'] or (st.session_state.valores['equip_cond'] + st.session_state.valores['equip_evap']), step=5000.0)
     
-    with col_f2:
-        fornece_insumos = st.checkbox("Você fornece insumos?", 
-                                       value=st.session_state.valores['fornece_insumos'], 
-                                       key="for_ins")
-        st.session_state.valores['fornece_insumos'] = fornece_insumos
-        
-        if fornece_insumos:
-            valor_insumos_terc = st.number_input("Valor insumos (R$)", 
-                                                  value=st.session_state.valores['valor_insumos_terc'] if st.session_state.valores['valor_insumos_terc'] > 0 else ins_cobre,
-                                                  step=2000.0, key="val_ins")
-            st.session_state.valores['valor_insumos_terc'] = valor_insumos_terc
-        else:
-            valor_insumos_terc = 0.0
-            st.caption("✓ Cliente/Construtora fornece")
+    st.session_state.valores['fornece_insumos'] = st.checkbox("Você fornece insumos?", value=st.session_state.valores['fornece_insumos'])
+    if st.session_state.valores['fornece_insumos']:
+        st.session_state.valores['valor_insumos_terc'] = st.number_input("Valor insumos", value=st.session_state.valores['valor_insumos_terc'] or st.session_state.valores['ins_cobre'], step=2000.0)
     
     st.markdown("---")
-    
-    mao_terc = st.number_input("Mão de obra (R$)", 
-                                value=st.session_state.valores['mao_terc'], 
-                                step=2000.0, key="mao_terc")
-    consumiveis = st.number_input("Consumíveis (R$)", 
-                                   value=st.session_state.valores['consumiveis'], 
-                                   step=500.0, key="cons")
-    startup_terc = st.number_input("Startup (R$)", 
-                                    value=st.session_state.valores['startup_terc'], 
-                                    step=500.0, key="start_terc")
-    margem_terc = st.number_input("Margem Terceiro (%)", 
-                                   value=st.session_state.valores['margem_terc'], 
-                                   step=1.0, key="marg_terc")
-    
-    st.session_state.valores['mao_terc'] = mao_terc
-    st.session_state.valores['consumiveis'] = consumiveis
-    st.session_state.valores['startup_terc'] = startup_terc
-    st.session_state.valores['margem_terc'] = margem_terc
+    st.session_state.valores['mao_terc'] = st.number_input("Mão de obra", value=st.session_state.valores['mao_terc'], step=2000.0)
+    st.session_state.valores['consumiveis'] = st.number_input("Consumíveis", value=st.session_state.valores['consumiveis'], step=500.0)
+    st.session_state.valores['startup_terc'] = st.number_input("Startup", value=st.session_state.valores['startup_terc'], step=500.0)
+    st.session_state.valores['margem_terc'] = st.number_input("Margem Terceiro %", value=st.session_state.valores['margem_terc'], step=1.0)
 
 # ========== CALCULAR E EXIBIR RESULTADOS ==========
-resultados = calcular_precos(
-    equip_cond, equip_evap, equip_bms,
-    ins_cobre, ins_drenos, ins_outros,
-    mao_tec, mao_aux, mao_eng,
-    serv_startup, serv_testes,
-    garantia, adm, margem_dir,
-    fornece_equip, fornece_insumos, valor_equip_terc, valor_insumos_terc,
-    mao_terc, consumiveis, startup_terc, margem_terc
-)
+resultados = calcular_tudo()
 
 st.markdown("---")
+col_res1, col_res2 = st.columns(2)
 
-# ========== EXIBIR RESULTADOS ==========
-col_r1, col_r2 = st.columns(2)
-
-with col_r1:
+with col_res1:
     st.subheader("📊 RESULTADO DIRETO")
     st.metric("💰 Seu Custo Total", f"R$ {resultados['custo_total_dir']:,.2f}")
     st.metric("🏷️ Preço para Cliente", f"R$ {resultados['preco_cliente']:,.2f}")
-    st.metric("📈 Seu Lucro Direto", f"R$ {resultados['lucro_dir']:,.2f}", 
-              delta=f"Margem: {(resultados['lucro_dir']/resultados['custo_total_dir']*100):.1f}%")
+    st.metric("📈 Seu Lucro", f"R$ {resultados['lucro_dir']:,.2f}")
 
-with col_r2:
+with col_res2:
     st.subheader("📊 RESULTADO TERCEIRO")
     st.metric("💰 Seu Custo Total", f"R$ {resultados['custo_total_terc']:,.2f}")
-    st.metric("🏷️ Preço para Construtora", f"R$ {resultados['preco_construtora']:,.2f}")
-    st.metric("📈 Seu Lucro Terceiro", f"R$ {resultados['lucro_terc']:,.2f}",
-              delta=f"Margem: {(resultados['lucro_terc']/resultados['custo_total_terc']*100):.1f}%")
+    st.metric("🏷️ Preço para Construtora", f"R$ {resultados['preco_terc']:,.2f}")
+    st.metric("📈 Seu Lucro", f"R$ {resultados['lucro_terc']:,.2f}")
 
-# ========== COMPARAÇÃO ==========
+# Comparação
 st.markdown("---")
-col_c1, col_c2 = st.columns(2)
+if resultados['lucro_dir'] > resultados['lucro_terc']:
+    st.success(f"✅ **Recomendação:** Modelo DIRETO é R$ {resultados['lucro_dir'] - resultados['lucro_terc']:,.2f} mais lucrativo")
+else:
+    st.info(f"ℹ️ **Recomendação:** Modelo TERCEIRO tem lucro de R$ {resultados['lucro_terc']:,.2f} com menos risco")
 
-with col_c1:
-    st.subheader("💡 Comparação")
-    diferenca = resultados['lucro_dir'] - resultados['lucro_terc']
-    if diferenca > 0:
-        st.success(f"✅ Modelo DIRETO é R$ {diferenca:,.2f} mais lucrativo")
-    else:
-        st.info(f"ℹ️ Modelo TERCEIRO tem R$ {abs(diferenca):,.2f} de lucro com menos risco")
-
-with col_c2:
-    st.subheader("⚡ Resumo")
-    st.write(f"**Custo Direto:** R$ {resultados['custo_total_dir']:,.2f}")
-    st.write(f"**Custo Terceiro:** R$ {resultados['custo_total_terc']:,.2f}")
-    st.write(f"**Diferença:** R$ {resultados['custo_total_dir'] - resultados['custo_total_terc']:,.2f}")
-
-st.markdown("---")
-st.caption("💡 **Qualquer alteração nos valores acima atualiza automaticamente os preços e lucros em tempo real!**")
+st.caption("💡 **Qualquer alteração nos valores atualiza os preços automaticamente! Use a aba 'Upload/Descrição' para análise automática do projeto.**")
