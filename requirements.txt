@@ -4,3 +4,4 @@ PyPDF2
 openpyxl
 requests
 beautifulsoup4
+plotly  # opcional para gráficos
