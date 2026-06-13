@@ -8,7 +8,6 @@ st.title("🌡️ IA Orçamentos Climatização")
 st.caption(f"Data: {datetime.now().strftime('%d/%m/%Y')}")
 st.markdown("---")
 
-# Inicializar session state
 if 'valores' not in st.session_state:
     st.session_state.valores = {
         'equip_cond': 89000.0,
@@ -83,7 +82,6 @@ def calcular():
         'lucro_terc': lucro_terc
     }
 
-# Interface
 st.header("Analise do Projeto")
 
 aba1, aba2 = st.tabs(["Descricao do Projeto", "Ajustes"])
@@ -129,7 +127,7 @@ Incluir startup."""
                     
                     st.rerun()
             else:
-                st.warning("Nao foi possivel extrair dados. Use o formato de exemplo.")
+                st.warning("Nao foi possivel extrair dados.")
 
 with aba2:
     st.subheader("Ajustes Manuais")
@@ -171,7 +169,6 @@ with aba2:
         st.session_state.valores['consumiveis'] = st.number_input("Consumiveis", value=st.session_state.valores['consumiveis'], step=500.0)
         st.session_state.valores['margem_terc'] = st.number_input("Margem Terceiro %", value=st.session_state.valores['margem_terc'], step=1.0)
 
-# Resultados
 resultados = calcular()
 
 st.markdown("---")
@@ -197,4 +194,4 @@ if resultados['lucro_dir'] > resultados['lucro_terc']:
 else:
     st.success(f"Modelo TERCEIRO com lucro de R$ {resultados['lucro_terc']:,.2f}")
 
-st.caption("Digite a descricao do projeto na primeira aba.")
+st.caption("Digite a descricao do projeto na primeira aba para extracao automatica.")
