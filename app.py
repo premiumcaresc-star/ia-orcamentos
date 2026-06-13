@@ -1,9 +1,6 @@
 import streamlit as st
-import pandas as pd
 import re
 from datetime import datetime
-import tempfile
-import os
 
 st.set_page_config(page_title="IA Orçamentos Climatização", page_icon="🌡️", layout="wide")
 
@@ -61,31 +58,30 @@ def extrair_informacoes(texto):
     
     return resultado
 
-def calcular_precos_por_analise(analise):
-    """Calcula valores sugeridos baseados na analise"""
+def calcular_precos_sugeridos(analise):
     sistema = analise["sistema"]
     carga = analise["carga_tr"] if analise["carga_tr"] else 20.0
     qtd_evap = analise["qtd_evaporadoras"] if analise["qtd_evaporadoras"] else 8
     metros_tubo = analise["metros_tubo"] if analise["metros_tubo"] else int(carga * 15)
     
     if sistema == "VRF/VRV":
-        equip_cond = float(carga * 3500)
-        equip_evap = float(qtd_evap * 4200)
-        mao_tec = float(carga * 800)
-        tubulacao = float(metros_tubo * 63)
-        startup = 3500.0
+        equip_cond = carga * 3500
+        equip_evap = qtd_evap * 4200
+        mao_tec = carga * 800
+        tubulacao = metros_tubo * 63
+        startup = 3500
     elif sistema == "Agua Gelada":
-        equip_cond = float(carga * 2800)
-        equip_evap = float(qtd_evap * 2500)
-        mao_tec = float(carga * 700)
-        tubulacao = float(metros_tubo * 82)
-        startup = 4500.0
+        equip_cond = carga * 2800
+        equip_evap = qtd_evap * 2500
+        mao_tec = carga * 700
+        tubulacao = metros_tubo * 82
+        startup = 4500
     else:
-        equip_cond = float(carga * 3000)
-        equip_evap = float(qtd_evap * 2000)
-        mao_tec = float(carga * 600)
-        tubulacao = float(metros_tubo * 50)
-        startup = 2500.0
+        equip_cond = carga * 3000
+        equip_evap = qtd_evap * 2000
+        mao_tec = carga * 600
+        tubulacao = metros_tubo * 50
+        startup = 2500
     
     return {
         "equip_cond": equip_cond,
@@ -95,7 +91,6 @@ def calcular_precos_por_analise(analise):
         "serv_startup": startup
     }
 
-# Inicializar session state
 if 'valores' not in st.session_state:
     st.session_state.valores = {
         'equip_cond': 89000.0,
@@ -147,138 +142,81 @@ def calcular_tudo():
         'lucro_terc': lucro_terc
     }
 
-# Interface principal
-st.header("Upload do Projeto para Analise Automatica")
+st.header("Analise Automatica do Projeto")
 
-tab_upload, tab_manual, tab_info = st.tabs(["Upload de Arquivo", "Preenchimento Manual", "Informacoes"])
+tab1, tab2, tab3 = st.tabs(["Digitar Descricao", "Preenchimento Manual", "Ajuda"])
 
-with tab_upload:
-    st.subheader("Faça upload do arquivo do projeto")
+with tab1:
+    st.subheader("Cole a descricao do projeto")
     
-    arquivo = st.file_uploader(
-        "Selecione o arquivo",
-        type=['txt', 'pdf', 'csv', 'xlsx'],
-        help="Formatos suportados: TXT, PDF, CSV, XLSX"
+    descricao = st.text_area(
+        "Descricao:",
+        height=150,
+        placeholder="Exemplo: Projeto para escritorio de 850m2. Sistema VRF com 28.5 TR. 12 evaporadoras. Incluir startup."
     )
     
-    if arquivo:
-        st.info(f"Arquivo: {arquivo.name}")
-        texto_extraido = None
-        
-        try:
-            if arquivo.name.endswith('.txt'):
-                texto_extraido = arquivo.read().decode('utf-8')
-                st.success("Arquivo TXT carregado com sucesso!")
-            
-            elif arquivo.name.endswith('.pdf'):
-                try:
-                    import PyPDF2
-                    pdf_reader = PyPDF2.PdfReader(arquivo)
-                    texto_extraido = ""
-                    for pagina in pdf_reader.pages:
-                        texto_pagina = pagina.extract_text()
-                        if texto_pagina:
-                            texto_extraido += texto_pagina + " "
-                    st.success("PDF processado com sucesso!")
-                except ImportError:
-                    st.error("Biblioteca PDF nao disponivel. Use arquivo TXT.")
-                except Exception as e:
-                    st.error(f"Erro ao ler PDF: {str(e)[:100]}")
-            
-            elif arquivo.name.endswith('.csv'):
-                try:
-                    df = pd.read_csv(arquivo)
-                    texto_extraido = df.to_string()
-                    st.success("CSV processado com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao ler CSV: {str(e)[:100]}")
-            
-            elif arquivo.name.endswith('.xlsx'):
-                try:
-                    df = pd.read_excel(arquivo, engine='openpyxl')
-                    texto_extraido = df.to_string()
-                    st.success("Excel processado com sucesso!")
-                except Exception as e:
-                    st.error(f"Erro ao ler Excel: {str(e)[:100]}. Verifique se o arquivo nao esta corrompido.")
-            
-            if texto_extraido and st.button("Extrair informacoes", use_container_width=True):
-                with st.spinner("Analisando dados..."):
-                    analise = extrair_informacoes(texto_extraido)
+    if st.button("Analisar Projeto", use_container_width=True):
+        if descricao:
+            with st.spinner("Analisando..."):
+                analise = extrair_informacoes(descricao)
+                if analise:
+                    st.success("Projeto analisado!")
                     
-                    if analise:
-                        st.subheader("Informacoes extraidas:")
-                        col_a1, col_a2 = st.columns(2)
-                        with col_a1:
-                            st.metric("Sistema", analise["sistema"])
-                            st.metric("Area (m²)", analise["area_m2"] if analise["area_m2"] else "nao detectado")
-                            st.metric("Carga (TR)", analise["carga_tr"] if analise["carga_tr"] else "nao detectado")
-                        with col_a2:
-                            st.metric("Evaporadoras", analise["qtd_evaporadoras"] if analise["qtd_evaporadoras"] else "nao detectado")
-                            st.metric("Tubulacao (m)", analise["metros_tubo"] if analise["metros_tubo"] else "nao detectado")
-                            if analise["servicos_extras"]:
-                                st.write("Servicos:", ", ".join(analise["servicos_extras"]))
-                        
-                        if analise["carga_tr"] or analise["area_m2"]:
-                            precos = calcular_precos_por_analise(analise)
-                            st.session_state.valores['equip_cond'] = precos['equip_cond']
-                            st.session_state.valores['equip_evap'] = precos['equip_evap']
-                            st.session_state.valores['ins_cobre'] = precos['ins_cobre']
-                            st.session_state.valores['mao_tec'] = precos['mao_tec']
-                            st.session_state.valores['serv_startup'] = precos['serv_startup']
-                            
-                            st.success("Valores sugeridos aplicados ao orcamento!")
-                            st.rerun()
-                    else:
-                        st.warning("Nao foi possivel extrair dados. Use preenchimento manual.")
-        
-        except Exception as e:
-            st.error(f"Erro ao processar arquivo: {str(e)[:200]}")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("Sistema", analise["sistema"])
+                        st.metric("Area", f"{analise['area_m2']} m2" if analise["area_m2"] else "nao detectado")
+                    with col2:
+                        st.metric("Carga", f"{analise['carga_tr']} TR" if analise["carga_tr"] else "nao detectado")
+                        st.metric("Evaporadoras", analise["qtd_evaporadoras"] if analise["qtd_evaporadoras"] else "nao detectado")
+                    
+                    if analise["carga_tr"] or analise["area_m2"]:
+                        precos = calcular_precos_sugeridos(analise)
+                        st.session_state.valores['equip_cond'] = float(precos['equip_cond'])
+                        st.session_state.valores['equip_evap'] = float(precos['equip_evap'])
+                        st.session_state.valores['ins_cobre'] = float(precos['ins_cobre'])
+                        st.session_state.valores['mao_tec'] = float(precos['mao_tec'])
+                        st.session_state.valores['serv_startup'] = float(precos['serv_startup'])
+                        st.success("Valores sugeridos aplicados!")
+                        st.rerun()
+        else:
+            st.warning("Digite uma descricao")
 
-with tab_manual:
-    st.subheader("Preencha os dados manualmente")
+with tab2:
+    st.subheader("Preenchimento Manual")
     
-    col_m1, col_m2 = st.columns(2)
-    with col_m1:
+    col_a, col_b = st.columns(2)
+    with col_a:
         sistema_manual = st.selectbox("Sistema", ["VRF/VRV", "Agua Gelada", "Split"])
-        area_manual = st.number_input("Area (m²)", value=850, step=50)
+        area_manual = st.number_input("Area (m2)", value=850, step=50)
+    with col_b:
         carga_manual = st.number_input("Carga (TR)", value=28.5, step=1.0)
-    with col_m2:
-        qtd_evap_manual = st.number_input("Quantidade de evaporadoras", value=12, step=1)
-        metros_tubo_manual = st.number_input("Metros de tubulacao", value=int(carga_manual * 15), step=50)
+        qtd_manual = st.number_input("Evaporadoras", value=12, step=1)
     
-    if st.button("Aplicar dados manuais", use_container_width=True):
-        analise_manual = {
+    if st.button("Aplicar Dados", use_container_width=True):
+        analise = {
             "sistema": sistema_manual,
             "carga_tr": float(carga_manual),
-            "qtd_evaporadoras": int(qtd_evap_manual),
-            "metros_tubo": int(metros_tubo_manual),
+            "qtd_evaporadoras": int(qtd_manual),
             "area_m2": int(area_manual),
+            "metros_tubo": int(carga_manual * 15),
             "servicos_extras": []
         }
-        precos = calcular_precos_por_analise(analise_manual)
-        
-        st.session_state.valores['equip_cond'] = precos['equip_cond']
-        st.session_state.valores['equip_evap'] = precos['equip_evap']
-        st.session_state.valores['ins_cobre'] = precos['ins_cobre']
-        st.session_state.valores['mao_tec'] = precos['mao_tec']
-        st.session_state.valores['serv_startup'] = precos['serv_startup']
-        
+        precos = calcular_precos_sugeridos(analise)
+        st.session_state.valores['equip_cond'] = float(precos['equip_cond'])
+        st.session_state.valores['equip_evap'] = float(precos['equip_evap'])
+        st.session_state.valores['ins_cobre'] = float(precos['ins_cobre'])
+        st.session_state.valores['mao_tec'] = float(precos['mao_tec'])
+        st.session_state.valores['serv_startup'] = float(precos['serv_startup'])
         st.success("Dados aplicados!")
         st.rerun()
 
-with tab_info:
-    st.subheader("Formatos suportados")
+with tab3:
     st.markdown("""
-    **Formatos de arquivo:**
-    - **TXT:** Texto puro com descricao do projeto
-    - **PDF:** Extrai texto automaticamente
-    - **CSV:** Leitura de planilhas CSV
-    - **XLSX:** Leitura de Excel
+    **Como usar:**
     
-    **O sistema procura por:**
-    - Sistema: VRF, Agua Gelada, Split
-    - Area: numeros seguidos de m2
-    - Carga: numeros seguidos de TR ou BTU
-    - Evaporadoras: numeros seguidos de evaporadoras
+    1. Digite a descricao do projeto na primeira aba
+    2. O sistema extrai automaticamente as informacoes
+    3. Ajuste os valores no orcamento abaixo
     
     **Exemplo de descricao:**
