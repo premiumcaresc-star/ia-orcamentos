@@ -1,3 +1,28 @@
+# Importar módulos
+from sinapi_integration import get_precos_sinapi, exibir_info_sinapi, criar_seletor_sinapi, get_precos_equipamentos
+from quantificador import criar_interface_quantificacao
+
+# Na sidebar, após criar_seletor_sinapi()
+criar_seletor_sinapi()
+
+# No corpo principal, antes da seção de orçamento
+st.header("📋 Dados do Projeto")
+
+col_info1, col_info2, col_info3 = st.columns(3)
+with col_info1:
+    tipo_projeto = st.selectbox("Tipo de Projeto", ["Novo", "Retrofit", "Ampliação"])
+with col_info2:
+    sistema = st.selectbox("Sistema", ["VRF/VRV", "Água Gelada", "Split"])
+with col_info3:
+    uf_projeto = st.selectbox("Localização", ["SP", "RJ", "MG", "RS", "BA", "PR", "SC", "GO", "PE", "CE", "DF"])
+
+# Interface de quantificação
+custo_equipamentos, quantidades = criar_interface_quantificacao(sistema, uf_projeto)
+
+# Atualizar session state com os valores calculados
+if 'valores' in st.session_state:
+    st.session_state.valores['equip_cond'] = custo_equipamentos * 0.6  # 60% para condensadora
+    st.session_state.valores['equip_evap'] = custo_equipamentos * 0.4  # 40% para evaporadoras
 # Importar integração SINAPI
 from sinapi_integration import get_precos_sinapi, exibir_info_sinapi
 
