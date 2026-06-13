@@ -2,8 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 from datetime import datetime
-import tempfile
-import os
 
 # Tentar importar bibliotecas para PDF (opcionais)
 try:
@@ -35,23 +33,20 @@ def extrair_texto_pdf(arquivo_pdf):
     except Exception as e:
         return None
 
-def extrair_info_dwg(arquivo_dwg):
-    """Simula extração de informações do DWG (por enquanto baseado no nome)"""
-    # Por enquanto, retorna uma mensagem orientativa
-    return f"Arquivo DWG detectado: {arquivo_dwg.name}. Análise avançada disponível na versão profissional."
-
 def analisar_descricao_projeto(descricao):
     """Extrai informações automáticas da descrição do projeto"""
+    if not descricao:
+        descricao = ""
     desc_lower = descricao.lower()
     
     resultados = {
         "sistema": "VRF/VRV",
         "area_m2": 500,
-        "carga_tr": 20,
+        "carga_tr": 20.0,
         "qtd_evaporadoras": 8,
         "metros_tubo": 150,
         "servicos_extras": [],
-        "texto_original": descricao[:500]
+        "texto_original": descricao[:500] if descricao else ""
     }
     
     # Detectar sistema
@@ -108,38 +103,35 @@ def analisar_descricao_projeto(descricao):
 def calcular_precos_por_analise(analise):
     """Calcula valores sugeridos baseados na análise"""
     sistema = analise["sistema"]
-    carga = analise["carga_tr"]
-    qtd_evap = analise["qtd_evaporadoras"]
-    metros_tubo = analise["metros_tubo"]
+    carga = float(analise["carga_tr"])
+    qtd_evap = int(analise["qtd_evaporadoras"])
+    metros_tubo = int(analise["metros_tubo"])
     
     if sistema == "VRF/VRV":
-        equip_cond = carga * 3500  # R$ 3.500 por TR
-        equip_evap = qtd_evap * 4200
-        mao_tec = carga * 800
-        tubulacao = metros_tubo * 63
-        startup = 3500
+        equip_cond = float(carga * 3500)  # R$ 3.500 por TR
+        equip_evap = float(qtd_evap * 4200)
+        mao_tec = float(carga * 800)
+        tubulacao = float(metros_tubo * 63)
+        startup = 3500.0
     elif sistema == "Água Gelada":
-        equip_cond = carga * 2800
-        equip_evap = qtd_evap * 2500
-        mao_tec = carga * 700
-        tubulacao = metros_tubo * 82
-        startup = 4500
+        equip_cond = float(carga * 2800)
+        equip_evap = float(qtd_evap * 2500)
+        mao_tec = float(carga * 700)
+        tubulacao = float(metros_tubo * 82)
+        startup = 4500.0
     else:  # Split
-        equip_cond = carga * 3000
-        equip_evap = qtd_evap * 2000
-        mao_tec = carga * 600
-        tubulacao = metros_tubo * 50
-        startup = 2500
+        equip_cond = float(carga * 3000)
+        equip_evap = float(qtd_evap * 2000)
+        mao_tec = float(carga * 600)
+        tubulacao = float(metros_tubo * 50)
+        startup = 2500.0
     
     return {
         "equip_cond": equip_cond,
         "equip_evap": equip_evap,
         "ins_cobre": tubulacao,
         "mao_tec": mao_tec,
-        "serv_startup": startup,
-        "sistema": sistema,
-        "carga_tr": carga,
-        "qtd_evap": qtd_evap
+        "serv_startup": startup
     }
 
 # ========== INICIALIZAR SESSION STATE ==========
@@ -173,17 +165,28 @@ if 'valores' not in st.session_state:
 def calcular_tudo():
     v = st.session_state.valores
     
-    custo_equip = v['equip_cond'] + v['equip_evap'] + v['equip_bms']
-    custo_insumos = v['ins_cobre'] + v['ins_drenos'] + v['ins_outros']
-    custo_mao = v['mao_tec'] + v['mao_aux'] + v['mao_eng']
-    custo_serv = v['serv_startup'] + v['serv_testes']
+    custo_equip = float(v['equip_cond']) + float(v['equip_evap']) + float(v['equip_bms'])
+    custo_insumos = float(v['ins_cobre']) + float(v['ins_drenos']) + float(v['ins_outros'])
+    custo_mao = float(v['mao_tec']) + float(v['mao_aux']) + float(v['mao_eng'])
+    custo_serv = float(v['serv_startup']) + float(v['serv_testes'])
     custo_total_dir = custo_equip + custo_insumos + custo_mao + custo_serv
     
-    preco_cliente = custo_total_dir * (1 + v['garantia']/100 + v['adm']/100) * (1 + v['margem_dir']/100)
-    lucro_dir = preco_cliente - (custo_total_dir * (1 + v['garantia']/100 + v['adm']/100))
+    garantia = float(v['garantia'])
+    adm = float(v['adm'])
+    margem_dir = float(v['margem_dir'])
     
-    custo_terc_base = v['mao_terc'] + v['consumiveis'] + v['startup_terc'] + v['valor_equip_terc'] + v['valor_insumos_terc']
-    preco_terc = custo_terc_base * (1 + v['margem_terc']/100)
+    preco_cliente = custo_total_dir * (1 + garantia/100 + adm/100) * (1 + margem_dir/100)
+    lucro_dir = preco_cliente - (custo_total_dir * (1 + garantia/100 + adm/100))
+    
+    mao_terc = float(v['mao_terc'])
+    consumiveis = float(v['consumiveis'])
+    startup_terc = float(v['startup_terc'])
+    valor_equip_terc = float(v['valor_equip_terc'])
+    valor_insumos_terc = float(v['valor_insumos_terc'])
+    margem_terc = float(v['margem_terc'])
+    
+    custo_terc_base = mao_terc + consumiveis + startup_terc + valor_equip_terc + valor_insumos_terc
+    preco_terc = custo_terc_base * (1 + margem_terc/100)
     lucro_terc = preco_terc - custo_terc_base
     
     return {
@@ -210,104 +213,51 @@ with tab_upload:
     )
     
     if arquivo:
-        st.info(f"📄 Arquivo carregado: {arquivo.name} ({arquivo.size} bytes)")
+        st.info(f"📄 Arquivo carregado: {arquivo.name}")
         
-        # Processar baseado no tipo
         if arquivo.name.lower().endswith('.pdf'):
             st.info("🔄 Processando arquivo PDF...")
-            texto_extraido = extrair_texto_pdf(arquivo)
-            if texto_extraido:
-                with st.spinner("Analisando PDF..."):
-                    analise = analisar_descricao_projeto(texto_extraido)
-                    precos_sugeridos = calcular_precos_por_analise(analise)
-                    
-                    st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
-                    st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
-                    st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
-                    st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
-                    st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
-                    
-                    st.success("✅ PDF processado com sucesso!")
-                    
-                    st.subheader("📊 Informações extraídas do PDF:")
-                    col_a1, col_a2, col_a3 = st.columns(3)
-                    with col_a1:
-                        st.metric("Sistema", analise['sistema'])
-                        st.metric("Área", f"{analise['area_m2']} m²")
-                    with col_a2:
-                        st.metric("Carga", f"{analise['carga_tr']} TR")
-                        st.metric("Evaporadoras", f"{analise['qtd_evaporadoras']} un")
-                    with col_a3:
-                        st.metric("Tubulação", f"{analise['metros_tubo']} m")
-                        if analise['servicos_extras']:
-                            st.write("**Extras:**", ", ".join(analise['servicos_extras']))
-                    
-                    st.rerun()
-            else:
-                st.warning("Não foi possível extrair texto do PDF. Tente colar a descrição manualmente na aba abaixo.")
-                st.text_area("Ou cole o texto do projeto aqui:", height=150, key="pdf_texto_alternativo")
-                if st.button("Analisar texto colado", key="btn_pdf_alt"):
-                    if st.session_state.pdf_texto_alternativo:
-                        analise = analisar_descricao_projeto(st.session_state.pdf_texto_alternativo)
-                        precos_sugeridos = calcular_precos_por_analise(analise)
-                        st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
-                        st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
-                        st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
-                        st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
-                        st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
-                        st.success("✅ Texto analisado!")
+            if PDF_SUPPORT:
+                texto_extraido = extrair_texto_pdf(arquivo)
+                if texto_extraido:
+                    with st.spinner("Analisando PDF..."):
+                        analise = analisar_descricao_projeto(texto_extraido)
+                        precos = calcular_precos_por_analise(analise)
+                        
+                        st.session_state.valores['equip_cond'] = float(precos['equip_cond'])
+                        st.session_state.valores['equip_evap'] = float(precos['equip_evap'])
+                        st.session_state.valores['ins_cobre'] = float(precos['ins_cobre'])
+                        st.session_state.valores['mao_tec'] = float(precos['mao_tec'])
+                        st.session_state.valores['serv_startup'] = float(precos['serv_startup'])
+                        
+                        st.success("✅ PDF processado com sucesso!")
+                        
+                        st.subheader("📊 Informações extraídas:")
+                        col_a1, col_a2 = st.columns(2)
+                        with col_a1:
+                            st.metric("Sistema", analise['sistema'])
+                            st.metric("Área", f"{analise['area_m2']} m²")
+                            st.metric("Carga", f"{analise['carga_tr']} TR")
+                        with col_a2:
+                            st.metric("Evaporadoras", f"{analise['qtd_evaporadoras']} un")
+                            st.metric("Tubulação", f"{analise['metros_tubo']} m")
+                            if analise['servicos_extras']:
+                                st.write("**Extras:**", ", ".join(analise['servicos_extras']))
+                        
                         st.rerun()
-        
-        elif arquivo.name.lower().endswith(('.dwg', '.dxf')):
-            st.info("📐 Arquivo CAD detectado (DWG/DXF)")
-            st.warning("""
-            **Análise de arquivos DWG:** 
-            O Streamlit Cloud não suporta extração nativa de DWG. 
-            
-            **Soluções:**
-            1. Descreva manualmente o projeto na aba "Preenchimento Manual"
-            2. Exporte o DWG para PDF e faça upload novamente
-            3. Cole as informações do projeto no campo abaixo
-            """)
-            
-            texto_manual = st.text_area("Cole as informações do projeto (área, carga, equipamentos):", height=150, key="dwg_texto")
-            if st.button("Analisar informações", key="btn_dwg"):
-                if texto_manual:
-                    analise = analisar_descricao_projeto(texto_manual)
-                    precos_sugeridos = calcular_precos_por_analise(analise)
-                    st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
-                    st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
-                    st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
-                    st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
-                    st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
-                    st.success("✅ Informações aplicadas!")
-                    st.rerun()
-        
-        elif arquivo.name.lower().endswith(('.csv', '.xlsx')):
-            try:
-                if arquivo.name.endswith('.csv'):
-                    df = pd.read_csv(arquivo)
+                    else:
+                        st.warning("Não foi possível extrair texto do PDF.")
                 else:
-                    df = pd.read_excel(arquivo)
-                st.success("✅ Planilha carregada! Use a aba 'Preenchimento Manual' para inserir os dados.")
-                st.dataframe(df.head())
-            except Exception as e:
-                st.error(f"Erro ao ler planilha: {e}")
-        
-        else:  # TXT
-            texto = arquivo.read().decode('utf-8')
-            with st.spinner("Analisando arquivo de texto..."):
-                analise = analisar_descricao_projeto(texto)
-                precos_sugeridos = calcular_precos_por_analise(analise)
+                    st.warning("PDF parece não conter texto editável.")
+            else:
+                st.warning("Biblioteca PDF não disponível. Tente colar o texto manualmente.")
                 
-                st.session_state.valores['equip_cond'] = precos_sugeridos['equip_cond']
-                st.session_state.valores['equip_evap'] = precos_sugeridos['equip_evap']
-                st.session_state.valores['ins_cobre'] = precos_sugeridos['ins_cobre']
-                st.session_state.valores['mao_tec'] = precos_sugeridos['mao_tec']
-                st.session_state.valores['serv_startup'] = precos_sugeridos['serv_startup']
-                
-                st.success("✅ Arquivo de texto processado!")
-                st.rerun()
+        elif arquivo.name.lower().endswith(('.dwg', '.dxf')):
+            st.info("📐 Arquivo CAD detectado")
+            st.warning("Para arquivos DWG/DXF, descreva o projeto manualmente na aba 'Preenchimento Manual'")
+            
+        elif arquivo.name.lower().endswith(('.txt', '.csv', '.xlsx')):
+            st.info(f"Arquivo {arquivo.name} carregado. Use a aba 'Preenchimento Manual' para inserir os dados.")
 
 with tab_manual:
     st.subheader("Preencha os dados manualmente")
@@ -315,60 +265,42 @@ with tab_manual:
     col_m1, col_m2 = st.columns(2)
     with col_m1:
         sistema_manual = st.selectbox("Sistema", ["VRF/VRV", "Água Gelada", "Split"])
-        area_manual = st.number_input("Área (m²)", value=850)
-        carga_manual = st.number_input("Carga (TR)", value=28.5)
+        area_manual = st.number_input("Área (m²)", value=850, step=50)
+        carga_manual = st.number_input("Carga (TR)", value=28.5, step=1.0, format="%.1f")
     with col_m2:
-        qtd_evap_manual = st.number_input("Quantidade de evaporadoras", value=12)
-        metros_tubo_manual = st.number_input("Metros de tubulação", value=carga_manual * 15)
+        qtd_evap_manual = st.number_input("Quantidade de evaporadoras", value=12, step=1)
+        metros_tubo_manual = st.number_input("Metros de tubulação", value=int(carga_manual * 15), step=50)
     
     if st.button("📊 Gerar orçamento baseado nestes dados", use_container_width=True):
         analise_manual = {
             "sistema": sistema_manual,
-            "carga_tr": carga_manual,
-            "qtd_evaporadoras": qtd_evap_manual,
-            "metros_tubo": metros_tubo_manual,
-            "area_m2": area_manual,
+            "carga_tr": float(carga_manual),
+            "qtd_evaporadoras": int(qtd_evap_manual),
+            "metros_tubo": int(metros_tubo_manual),
+            "area_m2": int(area_manual),
             "servicos_extras": []
         }
         precos = calcular_precos_por_analise(analise_manual)
         
-        st.session_state.valores['equip_cond'] = precos['equip_cond']
-        st.session_state.valores['equip_evap'] = precos['equip_evap']
-        st.session_state.valores['ins_cobre'] = precos['ins_cobre']
-        st.session_state.valores['mao_tec'] = precos['mao_tec']
-        st.session_state.valores['serv_startup'] = precos['serv_startup']
+        st.session_state.valores['equip_cond'] = float(precos['equip_cond'])
+        st.session_state.valores['equip_evap'] = float(precos['equip_evap'])
+        st.session_state.valores['ins_cobre'] = float(precos['ins_cobre'])
+        st.session_state.valores['mao_tec'] = float(precos['mao_tec'])
+        st.session_state.valores['serv_startup'] = float(precos['serv_startup'])
         
         st.success("✅ Dados aplicados! Role para baixo para ver o orçamento.")
         st.rerun()
 
 with tab_exemplo:
-    st.subheader("📋 Exemplos de descrição que funcionam bem")
-    
-    ex1, ex2 = st.tabs(["VRF/VRV", "Água Gelada"])
-    
-    with ex1:
-        st.code("""
+    st.subheader("📋 Exemplo de descrição")
+    st.code("""
 Projeto de climatização para edifício comercial:
 - Área total: 850 m²
 - Sistema VRF/VRV
 - Carga térmica: 28.5 TR
 - 12 evaporadoras tipo cassete
-- Tubulação de cobre com isolamento térmico
-- Incluir startup e comissionamento do sistema
-- Necessário integração com BMS
-        """)
-    
-    with ex2:
-        st.code("""
-Sistema de água gelada para shopping center:
-- Área climatizada: 2500 m²
-- Chiller de 120 TR
-- 45 fan coils tipo cassete
-- Torre de resfriamento
-- Comissionamento completo
-        """)
-    
-    st.info("💡 **Dica:** Cole uma descrição similar e clique em 'Analisar Projeto' para preencher automaticamente os valores.")
+- Incluir startup e comissionamento
+    """)
 
 # ========== LINHA DIVISÓRIA ==========
 st.markdown("---")
@@ -381,48 +313,49 @@ with col1:
     st.subheader("🎯 MODELO DIRETO")
     
     with st.expander("📦 Equipamentos", expanded=True):
-        st.session_state.valores['equip_cond'] = st.number_input("Condensadoras/Chiller", value=st.session_state.valores['equip_cond'], step=5000.0)
-        st.session_state.valores['equip_evap'] = st.number_input("Evaporadoras/Fan Coils", value=st.session_state.valores['equip_evap'], step=5000.0)
-        st.session_state.valores['equip_bms'] = st.number_input("BMS/Controles", value=st.session_state.valores['equip_bms'], step=1000.0)
+        st.session_state.valores['equip_cond'] = float(st.number_input("Condensadoras/Chiller", value=float(st.session_state.valores['equip_cond']), step=5000.0, format="%.2f"))
+        st.session_state.valores['equip_evap'] = float(st.number_input("Evaporadoras/Fan Coils", value=float(st.session_state.valores['equip_evap']), step=5000.0, format="%.2f"))
+        st.session_state.valores['equip_bms'] = float(st.number_input("BMS/Controles", value=float(st.session_state.valores['equip_bms']), step=1000.0, format="%.2f"))
     
     with st.expander("🔩 Insumos", expanded=True):
-        st.session_state.valores['ins_cobre'] = st.number_input("Cobre + Isolante", value=st.session_state.valores['ins_cobre'], step=1000.0)
-        st.session_state.valores['ins_drenos'] = st.number_input("Drenos + Eletrodutos", value=st.session_state.valores['ins_drenos'], step=500.0)
-        st.session_state.valores['ins_outros'] = st.number_input("Outros insumos", value=st.session_state.valores['ins_outros'], step=500.0)
+        st.session_state.valores['ins_cobre'] = float(st.number_input("Cobre + Isolante", value=float(st.session_state.valores['ins_cobre']), step=1000.0, format="%.2f"))
+        st.session_state.valores['ins_drenos'] = float(st.number_input("Drenos + Eletrodutos", value=float(st.session_state.valores['ins_drenos']), step=500.0, format="%.2f"))
+        st.session_state.valores['ins_outros'] = float(st.number_input("Outros insumos", value=float(st.session_state.valores['ins_outros']), step=500.0, format="%.2f"))
     
     with st.expander("👷 Mão de Obra", expanded=True):
-        st.session_state.valores['mao_tec'] = st.number_input("Técnicos", value=st.session_state.valores['mao_tec'], step=2000.0)
-        st.session_state.valores['mao_aux'] = st.number_input("Auxiliares", value=st.session_state.valores['mao_aux'], step=1000.0)
-        st.session_state.valores['mao_eng'] = st.number_input("Engenharia/Projeto", value=st.session_state.valores['mao_eng'], step=1000.0)
+        st.session_state.valores['mao_tec'] = float(st.number_input("Técnicos", value=float(st.session_state.valores['mao_tec']), step=2000.0, format="%.2f"))
+        st.session_state.valores['mao_aux'] = float(st.number_input("Auxiliares", value=float(st.session_state.valores['mao_aux']), step=1000.0, format="%.2f"))
+        st.session_state.valores['mao_eng'] = float(st.number_input("Engenharia/Projeto", value=float(st.session_state.valores['mao_eng']), step=1000.0, format="%.2f"))
     
     with st.expander("⚙️ Serviços", expanded=True):
-        st.session_state.valores['serv_startup'] = st.number_input("Startup/Comissionamento", value=st.session_state.valores['serv_startup'], step=500.0)
-        st.session_state.valores['serv_testes'] = st.number_input("Testes + Carga de gás", value=st.session_state.valores['serv_testes'], step=500.0)
+        st.session_state.valores['serv_startup'] = float(st.number_input("Startup/Comissionamento", value=float(st.session_state.valores['serv_startup']), step=500.0, format="%.2f"))
+        st.session_state.valores['serv_testes'] = float(st.number_input("Testes + Carga de gás", value=float(st.session_state.valores['serv_testes']), step=500.0, format="%.2f"))
     
     col_perc1, col_perc2, col_perc3 = st.columns(3)
     with col_perc1:
-        st.session_state.valores['garantia'] = st.number_input("Garantia %", value=st.session_state.valores['garantia'], step=0.5)
+        st.session_state.valores['garantia'] = float(st.number_input("Garantia %", value=float(st.session_state.valores['garantia']), step=0.5, format="%.1f"))
     with col_perc2:
-        st.session_state.valores['adm'] = st.number_input("Adm/Frete %", value=st.session_state.valores['adm'], step=0.5)
+        st.session_state.valores['adm'] = float(st.number_input("Adm/Frete %", value=float(st.session_state.valores['adm']), step=0.5, format="%.1f"))
     with col_perc3:
-        st.session_state.valores['margem_dir'] = st.number_input("Margem %", value=st.session_state.valores['margem_dir'], step=1.0)
+        st.session_state.valores['margem_dir'] = float(st.number_input("Margem %", value=float(st.session_state.valores['margem_dir']), step=1.0, format="%.1f"))
 
 with col2:
     st.subheader("🎯 MODELO TERCEIRO")
     
     st.session_state.valores['fornece_equip'] = st.checkbox("Você fornece equipamentos?", value=st.session_state.valores['fornece_equip'])
     if st.session_state.valores['fornece_equip']:
-        st.session_state.valores['valor_equip_terc'] = st.number_input("Valor equipamentos", value=st.session_state.valores['valor_equip_terc'] or (st.session_state.valores['equip_cond'] + st.session_state.valores['equip_evap']), step=5000.0)
+        valor_padrao = float(st.session_state.valores['equip_cond'] + st.session_state.valores['equip_evap'])
+        st.session_state.valores['valor_equip_terc'] = float(st.number_input("Valor equipamentos", value=float(st.session_state.valores['valor_equip_terc']) if st.session_state.valores['valor_equip_terc'] > 0 else valor_padrao, step=5000.0, format="%.2f"))
     
     st.session_state.valores['fornece_insumos'] = st.checkbox("Você fornece insumos?", value=st.session_state.valores['fornece_insumos'])
     if st.session_state.valores['fornece_insumos']:
-        st.session_state.valores['valor_insumos_terc'] = st.number_input("Valor insumos", value=st.session_state.valores['valor_insumos_terc'] or st.session_state.valores['ins_cobre'], step=2000.0)
+        st.session_state.valores['valor_insumos_terc'] = float(st.number_input("Valor insumos", value=float(st.session_state.valores['valor_insumos_terc']) if st.session_state.valores['valor_insumos_terc'] > 0 else st.session_state.valores['ins_cobre'], step=2000.0, format="%.2f"))
     
     st.markdown("---")
-    st.session_state.valores['mao_terc'] = st.number_input("Mão de obra", value=st.session_state.valores['mao_terc'], step=2000.0)
-    st.session_state.valores['consumiveis'] = st.number_input("Consumíveis", value=st.session_state.valores['consumiveis'], step=500.0)
-    st.session_state.valores['startup_terc'] = st.number_input("Startup", value=st.session_state.valores['startup_terc'], step=500.0)
-    st.session_state.valores['margem_terc'] = st.number_input("Margem Terceiro %", value=st.session_state.valores['margem_terc'], step=1.0)
+    st.session_state.valores['mao_terc'] = float(st.number_input("Mão de obra", value=float(st.session_state.valores['mao_terc']), step=2000.0, format="%.2f"))
+    st.session_state.valores['consumiveis'] = float(st.number_input("Consumíveis", value=float(st.session_state.valores['consumiveis']), step=500.0, format="%.2f"))
+    st.session_state.valores['startup_terc'] = float(st.number_input("Startup", value=float(st.session_state.valores['startup_terc']), step=500.0, format="%.2f"))
+    st.session_state.valores['margem_terc'] = float(st.number_input("Margem Terceiro %", value=float(st.session_state.valores['margem_terc']), step=1.0, format="%.1f"))
 
 # ========== CALCULAR E EXIBIR RESULTADOS ==========
 resultados = calcular_tudo()
@@ -444,10 +377,10 @@ with col_res2:
 
 # Comparação
 st.markdown("---")
-if resultados['lucro_dir'] > resultados['lucro_terc']:
-    st.success(f"✅ **Recomendação:** Modelo DIRETO é R$ {resultados['lucro_dir'] - resultados['lucro_terc']:,.2f} mais lucrativo")
+diferenca = resultados['lucro_dir'] - resultados['lucro_terc']
+if diferenca > 0:
+    st.success(f"✅ **Recomendação:** Modelo DIRETO é R$ {diferenca:,.2f} mais lucrativo")
 else:
     st.info(f"ℹ️ **Recomendação:** Modelo TERCEIRO tem lucro de R$ {resultados['lucro_terc']:,.2f} com menos risco")
 
 st.caption("💡 **Qualquer alteração nos valores atualiza os preços automaticamente!**")
-st.caption("📌 **PDF e DWG:** Para extração avançada de DWG, considere a versão profissional com integração CAD.")
