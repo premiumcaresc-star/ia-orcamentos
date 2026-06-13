@@ -21,13 +21,13 @@ jobs:
       run: |
         pip install pandas requests beautifulsoup4 openpyxl
     
-    - name: Run SINAPI update
-      run: python scripts/baixar_sinapi.py
+    - name: Run SINAPI update for all UFs
+      run: python scripts/baixar_todas_ufs.py
     
     - name: Commit and push if changed
       run: |
         git config --local user.email "action@github.com"
         git config --local user.name "GitHub Action"
-        git add data/precos_sinapi.json
-        git diff --quiet && git diff --staged --quiet || git commit -m "🔄 Atualização automática SINAPI"
+        git add data/
+        git diff --quiet && git diff --staged --quiet || git commit -m "🔄 Atualização automática SINAPI - $(date +'%Y-%m')"
         git push
